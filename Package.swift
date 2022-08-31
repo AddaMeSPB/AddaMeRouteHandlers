@@ -4,25 +4,65 @@
 import PackageDescription
 
 let package = Package(
-    name: "AddaMeHandlers",
+    name: "AddaMeRouteHandlers",
+    platforms: [.macOS(.v12)],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
-        .library(
-            name: "AddaMeHandlers",
-            targets: ["AddaMeHandlers"]),
+        .library(name: "AddaMeRouteHandlers", targets: ["AddaMeRouteHandlers"]),
+        .library(name: "AuthEngineHandlers", targets: ["AuthEngineHandlers"]),
+        .library(name: "ChatEngineHandlers", targets: ["ChatEngineHandlers"]),
+        .library(name: "EventEngineHandlers", targets: ["EventEngineHandlers"]),
+        .library(name: "AppExtensions", targets: ["AppExtensions"])
     ],
     dependencies: [
-        // Dependencies declare other packages that this package depends on.
-        // .package(url: /* package url */, from: "1.0.0"),
+        .package(url: "https://github.com/vapor/vapor.git", from: "4.62.1"),
+        .package(url: "https://github.com/AddaMeSPB/AddaSharedModels.git", branch: "route"),
+        .package(url: "https://github.com/twof/VaporTwilioService.git", from: "4.0.0"),
     ],
     targets: [
-        // Targets are the basic building blocks of a package. A target can define a module or a test suite.
-        // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
-            name: "AddaMeHandlers",
-            dependencies: []),
+            name: "AddaMeRouteHandlers",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "AddaSharedModels", package: "AddaSharedModels"),
+                "AuthEngineHandlers", "ChatEngineHandlers", "EventEngineHandlers"
+            ]),
+        
+        .target(
+            name: "AuthEngineHandlers",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "AddaSharedModels", package: "AddaSharedModels"),
+                .product(name: "Twilio", package: "VaporTwilioService"),
+                "AppExtensions", "ChatEngineHandlers"
+            ]),
+    
+        .target(
+            name: "ChatEngineHandlers",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "AddaSharedModels", package: "AddaSharedModels"),
+                "AppExtensions"
+            ]),
+    
+        .target(
+            name: "EventEngineHandlers",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "AddaSharedModels", package: "AddaSharedModels"),
+                "AppExtensions"
+            ]),
+        
+        .target(
+            name: "AppExtensions",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                .product(name: "AddaSharedModels", package: "AddaSharedModels"),
+            ]),
+        
+        
         .testTarget(
-            name: "AddaMeHandlersTests",
-            dependencies: ["AddaMeHandlers"]),
+            name: "AddaMeRouteHandlersTests",
+            dependencies: ["AddaMeRouteHandlers"]),
     ]
 )

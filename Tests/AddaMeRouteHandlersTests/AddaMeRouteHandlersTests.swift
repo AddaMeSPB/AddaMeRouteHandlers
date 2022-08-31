@@ -1,11 +1,11 @@
 import XCTest
-@testable import AddaMeHandlers
+@testable import AddaMeRouteHandlers
 
-final class AddaMeHandlersTests: XCTestCase {
+final class AddaMeRouteHandlersTests: XCTestCase {
     func testExample() throws {
         // This is an example of a functional test case.
         // Use XCTAssert and related functions to verify your tests produce the correct
         // results.
-        XCTAssertEqual(AddaMeHandlers().text, "Hello, World!")
+        // XCTAssertEqual(AddaMeHandlers().text, "Hello, World!")
     }
 }
