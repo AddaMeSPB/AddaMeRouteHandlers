@@ -1,0 +1,288 @@
+
+import Vapor
+import Fluent
+import URLRouting
+import AddaSharedModels
+import BSON
+import ChatEngineHandlers
+
+public func userHandler(
+    request: Request,
+    usersId: String,
+    route: UserRoute
+) async throws -> AsyncResponseEncodable {
+    switch route {
+    case .find:
+        guard let id = ObjectId(usersId) else {
+            throw Abort(.notFound, reason: "\(#line) parameters user id is missing")
+        }
+        
+        guard let user = try await User.query(on: request.db)
+                .with(\.$attachments)
+                .with(\.$events)
+                .filter(\.$id == id)
+                .first()
+                .get()
+        else { throw Abort(.notFound) }
+
+        return user.response
+    case .delete:
+        guard let id = ObjectId(usersId)
+        else {
+            throw Abort(.notFound, reason: "\(#line) parameters user id is missing")
+        }
+        
+        if request.payload.userId != id {
+            throw Abort(.unauthorized, reason: "\(#line) not authorized")
+        }
+        
+        let user = try await User.query(on: request.db)
+            .filter(\.$id == id)
+            .first()
+            .unwrap(or: Abort(.notFound, reason: "\(#line) user not found!"))
+            .get()
+        
+        do {
+            
+            try await Contact.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete(force: true).get()
+            
+            try await Device.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete(force: true).get()
+            
+            try await Event.query(on: request.db)
+                .filter(\.$owner.$id == id)
+                .delete(force: true).get()
+            
+            try await Attachment.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete(force: true).get()
+            
+            try await Message.query(on: request.db)
+                .filter(\.$sender.$id == id)
+                .delete(force: true).get()
+            
+            let uConversationAdmin = try await UserConversation.query(on: request.db)
+                .filter(\.$admin.$id == id)
+                .first()
+            
+            let uConversationMember = try await UserConversation.query(on: request.db)
+                .filter(\.$admin.$id == id)
+                .first()
+            
+            try await uConversationAdmin?.delete(force: true, on: request.db).get()
+            try await uConversationMember?.delete(force: true, on: request.db).get()
+            
+            try await uConversationAdmin?.$conversation.query(on: request.db).delete(force: true).get()
+            try await uConversationMember?.$conversation.query(on: request.db).delete(force: true).get()
+            
+            try await user.delete(force: true, on: request.db).get()
+        } catch {
+            throw Abort(.expectationFailed, reason: "\(#line) cant delete \(error)")
+        }
+        
+        return HTTPStatus.ok
+        
+    case .deleteSoft:
+        guard let id = ObjectId(usersId)
+        else {
+            throw Abort(.notFound, reason: "\(#line) parameters user id is missing")
+        }
+        
+        if request.payload.userId != id {
+            throw Abort(.unauthorized, reason: "\(#line) not authorized")
+        }
+        
+        let user = try await User.query(on: request.db)
+            .filter(\.$id == id)
+            .first()
+            .unwrap(or: Abort(.notFound, reason: "\(#line) user not found!"))
+            .get()
+        
+        do {
+            try await Contact.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete().get()
+            
+            try await Device.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete().get()
+            
+            try await Event.query(on: request.db)
+                .filter(\.$owner.$id == id)
+                .delete().get()
+            
+            try await Attachment.query(on: request.db)
+                .filter(\.$user.$id == id)
+                .delete().get()
+            
+            try await Message.query(on: request.db)
+                .filter(\.$sender.$id == id)
+                .delete().get()
+            
+            let uConversationAdmin = try await UserConversation.query(on: request.db)
+                .filter(\.$admin.$id == id)
+                .first()
+                .unwrap(or: Abort(.notFound, reason: "\(#line) UserConversation not found with id: \(id)"))
+                .get()
+           
+            let uConversationMember = try await UserConversation.query(on: request.db)
+                .filter(\.$member.$id == id)
+                .first()
+                .unwrap(or: Abort(.notFound, reason: "\(#line) UserConversation not found with id: \(id)"))
+                .get()
+            
+            // i have to remove all userconversation from which conversation was deleted
+            try await uConversationAdmin.$conversation.query(on: request.db).delete().get()
+            try await uConversationMember.$conversation.query(on: request.db).delete().get()
+            
+            try await uConversationAdmin.delete(on: request.db).get()
+            try await uConversationMember.delete(on: request.db).get()
+            
+            try await user.delete(on: request.db).get()
+        } catch {
+            throw Abort(.expectationFailed, reason: "\(#line) cant delete \(error)")
+        }
+        
+        return HTTPStatus.ok
+        
+    case .restore:
+        
+        guard let id = ObjectId(usersId) else {
+            throw Abort(.notFound, reason: "\(#line) parameters user id is missing")
+        }
+        
+        if request.payload.userId != id {
+            throw Abort(.unauthorized, reason: "\(#line) not authorized")
+        }
+        
+        do {
+            let user = try await User.query(on: request.db)
+                .withDeleted()
+                .filter(\.$id == id)
+                .first()
+                .unwrap(or: Abort(.notFound, reason: "\(#line) cant find before restore User id: \(id) "))
+                .get()
+            
+            try await user.restore(on: request.db)
+            
+            try await Event.query(on: request.db)
+                .withDeleted()
+                .filter(\.$owner.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            try await Contact.query(on: request.db)
+                .withDeleted()
+                .filter(\.$user.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            try await Device.query(on: request.db)
+                .withDeleted()
+                .filter(\.$user.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            try await AddaSharedModels.Event.query(on: request.db)
+                .withDeleted()
+                .filter(\.$owner.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            try await Message.query(on: request.db)
+                .filter(\.$sender.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .withDeleted()
+                .update().get()
+                            
+            try await Attachment.query(on: request.db)
+                .withDeleted()
+                .filter(\.$user.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            // UserConerversations Restore
+            try? await UserConversation
+                .query(on: request.db)
+                .with(\.$conversation)
+                .withDeleted()
+                .filter(\.$admin.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            try? await UserConversation
+                .query(on: request.db)
+                .with(\.$conversation)
+                .withDeleted()
+                .filter(\.$member.$id == id)
+                .set(\.$deletedAt, to: nil)
+                .update().get()
+            
+            // Conversations
+            let adminConversations = try await Conversation.query(on: request.db)
+                .withDeleted()
+                .join(siblings: \.$admins)
+                .filter(User.self, \.$id == id)
+                .all()
+            
+            for conversation in adminConversations {
+                if let acid = conversation.id {
+                    try await Conversation
+                        .query(on: request.db)
+                        .filter(\.$id == acid)
+                        .set(\.$deletedAt, to: nil)
+                        .withDeleted()
+                        .update()
+                        .get()
+                }
+            }
+            
+            // this part i dont think i need it
+//            let memberConversations = try await Conversation.query(on: request.db)
+//                .withDeleted()
+//                .join(siblings: \.$members)
+//                .filter(User.self, \.$id == id)
+//                .all()
+//
+//            for conversation in memberConversations {
+//                if let mcid = conversation.id {
+//                    try await Conversation
+//                        .query(on: request.db)
+//                        .filter(\.$id == mcid)
+//                        .set(\.$deletedAt, to: nil)
+//                        .withDeleted()
+//                        .update()
+//                        .get()
+//                }
+//            }
+
+        } catch {
+            throw Abort(.expectationFailed, reason: "\(#line) cant delete \(error)")
+        }
+        
+        let user = try await User.query(on: request.db)
+            .with(\.$attachments)
+            .with(\.$events)
+            .filter(\.$id == id)
+            .first()
+            .unwrap(or: Abort(.notFound, reason: "\(#line) After restore user cant find user"))
+            .get()
+            
+        return user.response
+    case let .devices(devicesRoute):
+        return try await devicesHandler(request: request, route: devicesRoute)
+    case .attachments(_):
+        return Response(status: .badRequest)
+    case let .conversations(conversationsRoute):
+        return try await conversationsHandler(
+            request: request,
+            usersId: usersId,
+            route: conversationsRoute
+        )
+    case .events(_):
+        return Response(status: .badRequest)
+    }
+}
